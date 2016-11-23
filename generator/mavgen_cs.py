@@ -268,7 +268,7 @@ def generate(basename, xml):
         filelist.append(os.path.basename(x.filename))
 
     for m in msgs:
-        m.order_map = [ 0 ] * len(m.fieldnames)
+        m.order_map = [0] * len(m.fieldnames)
         for i in range(0, len(m.fieldnames)):
             m.order_map[i] = m.ordered_fieldnames.index(m.fieldnames[i])
         
@@ -310,38 +310,54 @@ using System.Reflection;
     outf.write("}\n\n")
     
     outf.close()
-    
+    currentplatform = platform.system()
+    print("Platform: {}".format(currentplatform))
     # Some build commands depend on the platform - eg MS .NET Windows Vs Mono on Linux
-    if platform.system() == "Windows":
-        winpath=os.environ['WinDir']
+    findcscCommand = False
+    if currentplatform == "Windows":
+        winpath = os.environ['WinDir']
         cscCommand = winpath + "\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe"
         
-        if (os.path.exists(cscCommand)==False):
+        if os.path.exists(cscCommand) is False:
             print("\nError: CS compiler not found. .Net Assembly generation skipped")
-            return   
+            findcscCommand = False
+        else:
+            csCompilerVersion = '4.03'
+            findcscCommand = True
+            
+    elif currentplatform == "Linux":
+        cscCommand = "mcs"
+        try:
+            # subprocess.call(["which", "mono"])
+            os.system("which mcs")
+            findcscCommand = True
+            csCompilerVersion = os.popen('mcs --version').read()
+        except:
+            print("You do not have mono mcs installed")
+            findcscCommand = False
     else:
-        print("Error:.Net Assembly generation not yet supported on non Windows platforms")
-        return
-        cscCommand = "csc"
-
-    print("Compiling Assembly for .Net Framework 4.0")
-    
-    generatedCsFiles = [ serfilename, structsfilename]
-    
-    includedCsFiles =  [ 'CS/common/ByteArrayUtil.cs', 'CS/common/FrameworkBitConverter.cs', 'CS/common/Mavlink.cs'  ]
-    
-    outputLibraryPath = os.path.normpath(dir + "/mavlink.dll")
-    
-    compileCommand = "%s %s" % (cscCommand, "/target:library /debug /out:" + outputLibraryPath)
-    compileCommand = compileCommand + " /doc:" + os.path.normpath(dir + "/mavlink.xml")  
-    
-    for csFile in generatedCsFiles + includedCsFiles:
-        compileCommand = compileCommand + " " + os.path.normpath(csFile)
-    
-    #print("Cmd:" + compileCommand)
-    res = os.system (compileCommand)
-    
-    if res == '0':
-        print("Generated %s OK" % filename)
+        print("Error:.Net Assembly generation not yet supported on {} platforms".format(currentplatform))
+    # Don't try to make the files if the .net tool can not be found
+    if findcscCommand is True:
+        print("Compiling Assembly with {}".format(csCompilerVersion))
+        prependpath = 'generator/'
+        generatedCsFiles = [serfilename, structsfilename]
+        includedCsFiles = ['CS/common/ByteArrayUtil.cs', 'CS/common/FrameworkBitConverter.cs', 'CS/common/Mavlink.cs']
+        includedCsFiles = [prependpath + x for x in includedCsFiles]
+        outputLibraryPath = os.path.normpath(dir + "/mavlink.dll")
+        compileCommand = "%s %s" % (cscCommand, "/target:library /debug /out:" + outputLibraryPath)
+        # Don't warn about missing xml comment
+        compileCommand = compileCommand + " /nowarn:1591"
+        compileCommand = compileCommand + " /doc:" + os.path.normpath(dir + "/mavlink.xml")
+        for csFile in generatedCsFiles + includedCsFiles:
+            compileCommand = compileCommand + " " + os.path.normpath(csFile)
+        print("Cmd:" + compileCommand)
+        res = os.system(compileCommand)
+        if res == 0:
+            # print("Generated %s OK" % filename)
+            print("Generated OK")
+        else:
+            print("Error: Compiling failed")
+            print("Return value: {}".format(res))
     else:
-        print("Error")
+        print("Could not find your C# Compiler")
