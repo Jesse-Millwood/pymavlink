@@ -223,7 +223,77 @@ namespace MavLink
                    BadCrcPacketsReceived++;
                }
            }
-       }  
+       }
+
+		public MavlinkPacket ParseBytePacket(byte [] inBytes)
+		{
+			// TODO: Make sure the first byte is a start byte
+			// TODO: Make sure the byte array is at least 8 bytes long
+
+			/*
+            * Byte order:
+            * 
+            * 0  Packet start sign	
+            * 1	 Payload length	 0 - 255
+            * 2	 Packet sequence	 0 - 255
+            * 3	 System ID	 1 - 255
+            * 4	 Component ID	 0 - 255
+            * 5	 Message ID	 0 - 255
+            * 6 to (n+6)	 Data	 (0 - 255) bytes
+            * (n+7) to (n+8)	 Checksum (high byte, low byte) for v0.9, lowbyte, highbyte for 1.0
+            *
+            */
+			UInt16 payLoadLength = inBytes[1];
+
+			// Check the CRC. Does not include the starting 'U' byte but does include the length
+			ushort crc1 = Mavlink_Crc.Calculate(inBytes, (UInt16) 1, (UInt16)(payLoadLength + 5));
+
+			if (MavlinkSettings.CrcExtra)
+			{
+				byte possibleMsgId = inBytes [5];
+				if (!MavLinkSerializer.Lookup.ContainsKey(possibleMsgId))
+				{
+					// we have received an unknown message. In this case we don't know the special
+					// CRC extra, so we have no choice but to fail.
+
+					// The way we do this is to just let the procedure continue
+					// There will be a natural failure of the main packet CRC
+				}
+				else
+				{
+					var extra = MavLinkSerializer.Lookup[possibleMsgId];
+					crc1 = Mavlink_Crc.CrcAccumulate(extra.CrcExtra, crc1);
+				}
+			}
+
+			byte crcHigh = (byte)(crc1 & 0xFF);
+			byte crcLow = (byte)(crc1 >> 8);
+
+			byte messageCrcHigh = inBytes[1 + 5  + payLoadLength];
+			byte messageCrcLow = inBytes[1 + 6  + payLoadLength];
+			if (messageCrcHigh == crcHigh && messageCrcLow == crcLow)
+			{
+				byte [] packet = new byte[payLoadLength + 3];  // +3 because we are going to send up the sys and comp id and msg type with the data
+				for (int j = 0; j < packet.Length; j++)
+				{
+					packet[j] = inBytes[3+ j];
+				}
+				MavlinkPacket outPacket= new MavlinkPacket
+				{
+					SystemId = inBytes[3],
+					ComponentId = inBytes[4],
+					SequenceNumber = inBytes[2],
+					Message = this.Deserialize(packet, 2)
+				};
+				return outPacket;
+			}
+			else
+			{
+				MavlinkPacket errorPacket = new MavlinkPacket ();
+				return errorPacket;
+			}
+		}
+
 
        public byte[] Send(MavlinkPacket mavlinkPacket)
        {
