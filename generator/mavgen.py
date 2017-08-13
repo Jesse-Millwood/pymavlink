@@ -88,6 +88,7 @@ def mavgen(opts, args):
     # expand includes
     for x in xml[:]:
         for i in x.include:
+            print("Include: {}".format(x.include))
             fname = os.path.join(os.path.dirname(x.filename), i)
 
             # Validate XML file with XSD file if possible.
